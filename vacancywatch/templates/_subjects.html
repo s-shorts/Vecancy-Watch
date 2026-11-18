@@ -1,0 +1,13 @@
+{% set chosen_subj = settings.subjects if settings.subjects is not none else subjects.keys()|list %}
+<div class="prof-grid subj-grid">
+  {% for key, sub in subjects.items() %}
+  <label class="prof subj">
+    <input type="checkbox" name="subjects" value="{{ key }}" {{ 'checked' if key in chosen_subj }}>
+    <span class="prof-body"><strong>{{ sub.label }}</strong></span>
+  </label>
+  {% endfor %}
+</div>
+<label class="field">Other subjects (optional, separate with commas)
+  <input name="custom_subjects" value="{{ (settings.custom_subjects or [])|join(', ') }}" placeholder="e.g. Cyber Security, Statistics">
+</label>
+<p class="muted small">Untick everything to get alerts for all subjects.</p>

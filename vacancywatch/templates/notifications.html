@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block heading %}Alerts{% endblock %}
+{% block sub %}<p class="muted">New vacancies, applications opening, deadline extensions and closing‑soon reminders.</p>{% endblock %}
+{% block content %}
+<div class="nlist">
+  {% for n in rows %}
+  <div class="notif {{ 'unread' if not n.read }} k-{{ n.kind }}">
+    <div class="nicon">{{ meta.get(n.kind, ('🔔',''))[0] }}</div>
+    <div class="nbody">
+      <div class="ntitle">{{ n.title }}</div>
+      {% for line in n.body.split('\n') %}<div class="{{ 'muted small' if not loop.first }}">{{ line }}</div>{% endfor %}
+      <div class="nmeta"><span class="muted small">{{ n.created|ago }}</span>{% if n.url %} · <a href="{{ n.url }}" target="_blank" rel="noopener">Open notice ↗</a>{% endif %}</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty"><h3>No alerts yet</h3><p class="muted">When we find a vacancy in your states, it shows up here (and on Telegram / e‑mail if you've set them up).</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

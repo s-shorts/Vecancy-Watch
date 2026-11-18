@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Institutions{% endblock %}
+{% block heading %}Institutions we watch{% endblock %}
+{% block sub %}<p class="muted">We find each site's recruitment page by ourselves. If a site fails or misses notices, add its recruitment‑page link directly below.</p>{% endblock %}
+{% block content %}
+<form class="addsrc" method="post" action="{{ url_for('sources_add') }}">
+  <h3>➕ Add a college, university or recruitment page</h3>
+  <div class="row-add">
+    <input name="name" placeholder="Name, e.g. Govt. Degree College Lucknow">
+    <input name="url" placeholder="Website or recruitment page link, e.g. https://www.xyz.ac.in/recruitment" class="grow" required>
+    <select name="state">{% for s in state_opts %}<option>{{ s }}</option>{% endfor %}</select>
+    <button class="btn primary">Add &amp; check</button>
+  </div>
+  <p class="muted small">Tip: a direct link to the "Recruitment" or "Careers" page works best.</p>
+</form>
+
+<div class="tabs">
+  <a class="{{ 'on' if show == 'watching' }}" href="{{ url_for('sources_page', show='watching') }}">Watching</a>
+  <a class="{{ 'on' if show == 'colleges' }}" href="{{ url_for('sources_page', show='colleges') }}">Colleges</a>
+  <a class="{{ 'on' if show == 'errors' }}" href="{{ url_for('sources_page', show='errors') }}">Problems</a>
+  <a class="{{ 'on' if show == 'all' }}" href="{{ url_for('sources_page', show='all') }}">All in the list</a>
+  <span class="muted small">{{ total }} shown</span>
+</div>
+
+{% for state, rows in grouped.items() %}
+<section class="srcgroup">
+  <h2>{{ state }} <span class="muted small">{{ rows|length }}</span></h2>
+  <table class="srctable">
+    <thead><tr><th></th><th>Institution</th><th>Type</th><th>Last checked</th><th>Vacancies</th><th>Watch</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr data-id="{{ r.id }}" class="{{ 'off' if not r.enabled }}">
+        <td><span class="dot {{ r.last_status or 'never' }}" title="{{ r.last_error or ('OK' if r.last_status == 'ok' else 'Not checked yet') }}"></span></td>
+        <td><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.name }}</a>
+          {% if r.custom %}<span class="chip state">Added by you</span>{% endif %}
+          {% if r.discovered %}<span class="chip state">Found on university site</span>{% endif %}
+          {% if r.last_status == 'error' %}<div class="err small">{{ r.last_error }}</div>{% endif %}</td>
+        <td class="muted small">{{ r.type }}</td>
+        <td class="muted small">{{ r.last_checked|ago }}</td>
+        <td>{{ r.found_count or 0 }}</td>
+        <td><label class="switch"><input type="checkbox" class="src-toggle" {{ 'checked' if r.enabled }}><span></span></label></td>
+        <td class="nowrap">
+          <button class="btn small ghost src-scan">Check</button>
+          {% if r.custom %}<form method="post" action="{{ url_for('sources_delete', sid=r.id) }}" class="inline-form" onsubmit="return confirm('Remove this source?')"><button class="btn small ghost danger">Remove</button></form>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<div class="empty"><h3>Nothing here</h3></div>
+{% endfor %}
+{% endblock %}

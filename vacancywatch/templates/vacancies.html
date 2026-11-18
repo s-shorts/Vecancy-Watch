@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card %}
+{% block title %}Vacancies & history{% endblock %}
+{% block heading %}Vacancies &amp; history{% endblock %}
+{% block sub %}<p class="muted">Everything we've ever found is kept here, so you can come back to anything you missed.</p>{% endblock %}
+{% block content %}
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ args.q or '' }}" placeholder="Search title or institution (e.g. Physics, IIT, Commerce)…" class="grow">
+  <select name="status">
+    {% for val, label in [('', 'Any status'), ('active', 'Open, upcoming & possibly open'), ('open', 'Open'), ('upcoming', 'Opening soon'), ('likely_open', 'Possibly open'), ('closed', 'Closed'), ('unknown', 'Date unclear')] %}
+    <option value="{{ val }}" {{ 'selected' if (args.status or '') == val }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="subject">
+    <option value="mine" {{ 'selected' if (args.subject or 'mine') == 'mine' }}>My subjects (incl. not confirmed)</option>
+    <option value="yes" {{ 'selected' if args.subject == 'yes' }}>My subjects — confirmed only</option>
+    <option value="no" {{ 'selected' if args.subject == 'no' }}>Other subjects</option>
+    <option value="all" {{ 'selected' if args.subject == 'all' }}>All subjects</option>
+  </select>
+  <select name="state">
+    <option value="">All states</option>
+    {% for s in states %}<option {{ 'selected' if args.state == s }}>{{ s }}</option>{% endfor %}
+  </select>
+  <select name="nature">
+    <option value="">Regular &amp; contract</option>
+    <option value="Regular" {{ 'selected' if args.nature == 'Regular' }}>Regular only</option>
+    <option value="Contract/Guest" {{ 'selected' if args.nature == 'Contract/Guest' }}>Contract / guest only</option>
+  </select>
+  <select name="kind">
+    <option value="ads" {{ 'selected' if (args.kind or 'ads') == 'ads' }}>Advertisements</option>
+    <option value="update" {{ 'selected' if args.kind == 'update' }}>Results / shortlists / interviews</option>
+    <option value="all" {{ 'selected' if args.kind == 'all' }}>Everything</option>
+  </select>
+  <select name="sort">
+    <option value="found" {{ 'selected' if (args.sort or 'found') == 'found' }}>Newest found</option>
+    <option value="deadline" {{ 'selected' if args.sort == 'deadline' }}>Last date (soonest)</option>
+    <option value="institution" {{ 'selected' if args.sort == 'institution' }}>Institution A–Z</option>
+  </select>
+  <label class="check sm"><input type="checkbox" name="starred" value="1" {{ 'checked' if args.starred }}> Saved</label>
+  <label class="check sm"><input type="checkbox" name="applied" value="1" {{ 'checked' if args.applied }}> Applied</label>
+  <label class="check sm"><input type="checkbox" name="show_hidden" value="1" {{ 'checked' if args.show_hidden }}> Show hidden</label>
+  <button class="btn primary">Filter</button>
+  <a class="btn ghost" href="{{ url_for('vacancies') }}">Reset</a>
+</form>
+
+<div class="list-head">
+  <span class="muted">{{ total }} result{{ '' if total == 1 else 's' }}</span>
+  {% set a = dict(args) %}{% set _ = a.pop('page', None) %}
+  <a class="btn small ghost" href="{{ url_for('vacancies_csv', **a) }}">⬇ Download as spreadsheet (CSV)</a>
+</div>
+
+<div class="vlist">
+  {% for v in rows %}{{ card(v) }}{% else %}
+  <div class="empty"><h3>No vacancies match these filters</h3><p class="muted">Try "Any status" to include closed ones from your history.</p></div>
+  {% endfor %}
+</div>
+
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}{% set _ = a.update(page=page - 1) %}<a class="btn ghost" href="{{ url_for('vacancies', **a) }}">← Previous</a>{% endif %}
+  <span class="muted">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}{% set _ = a.update(page=page + 1) %}<a class="btn ghost" href="{{ url_for('vacancies', **a) }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

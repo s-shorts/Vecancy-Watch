@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}VacancyWatch{% endblock %} · VacancyWatch</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233346c4'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>VW</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="{{ 'bare' if bare }}">
+{% if bare %}
+  <main class="bare-main">
+    {% include "_flash.html" %}
+    {% block bare_content %}{% endblock %}
+  </main>
+{% else %}
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="logo">VW</span>
+      <span><strong>VacancyWatch</strong><small>{{ profession_label }}</small></span>
+    </a>
+    <nav>
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' }}"><span class="ic">▦</span>Dashboard</a>
+      <a href="{{ url_for('vacancies', status='active') }}" class="{{ 'active' if active == 'vacancies' }}"><span class="ic">☰</span>Vacancies &amp; history</a>
+      <a href="{{ url_for('notifications') }}" class="{{ 'active' if active == 'notifications' }}"><span class="ic">🔔</span>Alerts{% if unread %}<span class="badge" id="unread-badge">{{ unread }}</span>{% else %}<span class="badge hidden" id="unread-badge"></span>{% endif %}</a>
+      <a href="{{ url_for('sources_page') }}" class="{{ 'active' if active == 'sources' }}"><span class="ic">🏛</span>Institutions</a>
+      <a href="{{ url_for('settings_page') }}" class="{{ 'active' if active == 'settings' }}"><span class="ic">⚙</span>Settings</a>
+    </nav>
+    <div class="side-foot">
+      <div class="muted small">Watching</div>
+      <div class="small">{{ (settings.states or [])|length }} state{{ '' if (settings.states or [])|length == 1 else 's' }}{% if settings.include_national %} + All‑India{% endif %}</div>
+      <div class="muted small" style="margin-top:6px">Checks every {{ settings.scan_interval_hours|int }} h</div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>{% block heading %}{% endblock %}</h1>
+        {% block sub %}{% endblock %}
+      </div>
+      <div class="scanbox">
+        <div class="scan-info">
+          <span id="scan-text" class="muted small">{% if progress.running %}Checking…{% else %}Last checked {{ last_scan_human }}{% endif %}</span>
+          <div class="progress {{ '' if progress.running else 'hidden' }}" id="scan-progress"><div id="scan-bar"></div></div>
+        </div>
+        <button id="scan-btn" class="btn primary" {{ 'disabled' if progress.running }}>↻ Check now</button>
+      </div>
+    </header>
+    {% include "_flash.html" %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endif %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

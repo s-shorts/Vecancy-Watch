@@ -1,0 +1,11 @@
+{
+  "profession": "assistant_professor",
+  "states": [],
+  "include_national": true,
+  "include_colleges": true,
+  "subjects": ["computer_science", "data_science", "software_engineering", "information_technology"],
+  "custom_subjects": [],
+  "reminder_days": [7, 3, 1],
+  "notify_likely_open": true,
+  "extra_sources": []
+}

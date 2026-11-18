@@ -1,0 +1,97 @@
+{% macro countdown(v) -%}
+  {%- if v.status == 'upcoming' -%}
+    <span class="cd up">Opens {{ v.opening_date|fdate }}</span>
+  {%- elif v.days_left is none -%}
+    <span class="cd unk">No last date found</span>
+  {%- elif v.days_left < 0 -%}
+    <span class="cd gone">Closed {{ -v.days_left }} day{{ '' if v.days_left == -1 else 's' }} ago</span>
+  {%- elif v.days_left == 0 -%}
+    <span class="cd hot">Closes today</span>
+  {%- elif v.days_left <= 3 -%}
+    <span class="cd hot">{{ v.days_left }} day{{ '' if v.days_left == 1 else 's' }} left</span>
+  {%- elif v.days_left <= 7 -%}
+    <span class="cd warm">{{ v.days_left }} days left</span>
+  {%- else -%}
+    <span class="cd ok">{{ v.days_left }} days left</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro card(v, compact=False) %}
+<article class="vcard {{ 'is-hidden' if v.hidden }} {{ 'is-applied' if v.applied }}" data-id="{{ v.id }}">
+  <div class="vtop">
+    <div class="chips">
+      <span class="chip st-{{ v.status }}">{{ v.status_label if v.kind != 'update' else 'Update' }}</span>
+      {% if v.is_new %}<span class="chip new">NEW</span>{% endif %}
+      {% if v.kind == 'corrigendum' %}<span class="chip corr">Corrigendum</span>{% endif %}
+      {% if v.nature == 'Contract/Guest' %}<span class="chip contract">Contract / Guest</span>{% endif %}
+      {% if v.kind != 'update' %}
+        {% if v.subject_match == 'yes' %}<span class="chip subj-yes">✔ {{ v.subjects }}</span>
+        {% elif v.subject_match == 'maybe' or v.subject_match is none %}<span class="chip subj-maybe">Subject not confirmed</span>
+        {% elif v.subject_match == 'no' %}<span class="chip subj-no">Other subjects</span>{% endif %}
+      {% endif %}
+      <span class="chip state">{{ v.state }}</span>
+    </div>
+    {% if v.kind != 'update' %}{{ countdown(v) }}{% endif %}
+  </div>
+  <div class="inst">{{ v.institution }}</div>
+  <a class="vtitle" href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a>
+  {% set d = v.d %}
+  {% if d.posts or d.advt_no or d.pay %}
+  <div class="facts">
+    {% if d.posts %}<span><b>{{ d.posts }}</b> posts</span>{% endif %}
+    {% if d.advt_no %}<span>Advt <b>{{ d.advt_no }}</b></span>{% endif %}
+    {% if d.pay %}<span>{{ d.pay }}</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if not compact %}
+  <div class="dates">
+    <span><b>Opens</b> {{ v.opening_date|fdate }}</span>
+    <span><b>Last date</b> {{ v.deadline|fdate }}</span>
+    <span><b>Published</b> {{ v.posted_date|fdate }}</span>
+    <span><b>First seen</b> {{ v.first_seen|fdate }}</span>
+  </div>
+  {% endif %}
+  {% if v.alts %}
+  <details class="alts"><summary>Also listed in {{ v.alts|length }} other place{{ '' if v.alts|length == 1 else 's' }} (merged)</summary>
+    <ul>{% for a in v.alts %}<li><a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title|truncate(140) }}</a></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+  {% if not compact and v.kind != 'update' %}
+  <details class="notice-box" {{ 'open' if v.subject_match == 'yes' and d.snippets }}>
+    <summary>📄 From the notification
+      {% if v.notice_read == 'pdf' or v.notice_read == 'page' %}<span class="muted small">(read automatically)</span>
+      {% elif v.notice_read == 'scanned' %}<span class="muted small">(scanned image — open the notice to read it)</span>
+      {% elif v.notice_read == 'failed' %}<span class="muted small">(couldn't open the notice)</span>
+      {% else %}<span class="muted small">(not read yet)</span>{% endif %}
+    </summary>
+    <div class="notice-grid">
+      {% if v.subject_list or v.other_list %}
+      <div class="nk">Subjects in notice</div><div>
+        {% for x in v.subject_list %}<span class="chip subj-yes">{{ x }}</span> {% endfor %}
+        {% for x in v.other_list %}<span class="chip state">{{ x }}</span> {% endfor %}</div>
+      {% endif %}
+      {% if d.posts %}<div class="nk">Total posts</div><div>{{ d.posts }}</div>{% endif %}
+      {% if d.advt_no %}<div class="nk">Advertisement no.</div><div>{{ d.advt_no }}</div>{% endif %}
+      {% if d.pay %}<div class="nk">Pay</div><div>{{ d.pay }}</div>{% endif %}
+      {% if d.qualification %}<div class="nk">Qualification</div><div>{{ d.qualification }}</div>{% endif %}
+      {% if d.mode %}<div class="nk">How to apply</div><div>{{ d.mode }}{% if d.apply_url %} — <a href="{{ d.apply_url }}" target="_blank" rel="noopener">{{ d.apply_url }}</a>{% endif %}</div>{% endif %}
+      {% if d.hardcopy_by %}<div class="nk">Hard copy by</div><div><b>{{ d.hardcopy_by|fdate }}</b></div>{% endif %}
+      {% if d.fee %}<div class="nk">Fee</div><div>{{ d.fee }}</div>{% endif %}
+    </div>
+    {% if d.snippets %}
+    <div class="nk" style="margin-top:8px">What it says about your subject</div>
+    {% for sn in d.snippets %}<blockquote class="snip">{{ sn }}</blockquote>{% endfor %}
+    {% endif %}
+    {% if not d and not v.subject_list %}<p class="muted small">No details could be read automatically. Please open the notice.</p>{% endif %}
+  </details>
+  {% endif %}
+  <div class="vactions">
+    <a class="btn small primary" href="{{ v.url }}" target="_blank" rel="noopener">Open notice ↗</a>
+    {% if v.page_url and v.page_url != v.url %}<a class="btn small ghost" href="{{ v.page_url }}" target="_blank" rel="noopener">Source page</a>{% endif %}
+    <span class="spacer"></span>
+    <button class="tog {{ 'on' if v.starred }}" data-field="starred" title="Save / star — get reminders">★ <span>{{ 'Saved' if v.starred else 'Save' }}</span></button>
+    <button class="tog {{ 'on' if v.applied }}" data-field="applied" title="Mark as applied (stops reminders)">✓ <span>{{ 'Applied' if v.applied else 'Applied?' }}</span></button>
+    <button class="tog {{ 'on' if v.hidden }}" data-field="hidden" title="Hide from lists">✕ <span>{{ 'Hidden' if v.hidden else 'Hide' }}</span></button>
+  </div>
+</article>
+{% endmacro %}

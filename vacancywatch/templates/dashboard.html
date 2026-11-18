@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block sub %}<p class="muted">{{ profession_label }} vacancies{% if subject_labels %} in <b>{{ subject_labels|join(', ') }}</b>{% endif %} · {{ (settings.states or [])|join(', ') }}</p>{% endblock %}
+{% block content %}
+<section class="stats">
+  <a class="stat s-open" href="{{ url_for('vacancies', status='open', sort='deadline') }}"><b>{{ stats.open }}</b><span>Open now</span></a>
+  <a class="stat s-hot" href="{{ url_for('vacancies', status='open', sort='deadline') }}"><b>{{ stats.closing }}</b><span>Closing within 7 days</span></a>
+  <a class="stat s-up" href="{{ url_for('vacancies', status='upcoming', sort='deadline') }}"><b>{{ stats.upcoming }}</b><span>Opening soon</span></a>
+  <a class="stat s-likely" href="{{ url_for('vacancies', status='likely_open') }}"><b>{{ stats.likely }}</b><span>Possibly open (no date found)</span></a>
+  <a class="stat s-new" href="{{ url_for('vacancies', status='active') }}"><b>{{ stats.new7 }}</b><span>New this week</span></a>
+</section>
+
+{% if progress.running and not stats.total %}
+<div class="empty">
+  <div class="spinner"></div>
+  <h3>First check in progress…</h3>
+  <p class="muted">We're visiting {{ src.n }} institution websites. This can take 5–15 minutes the first time, and results show up here as they come in. You can leave this page open.</p>
+</div>
+{% elif not stats.total %}
+<div class="empty">
+  <h3>No vacancies found yet</h3>
+  <p class="muted">Press <b>Check now</b> to run a check. If institutions show errors, open <a href="{{ url_for('sources_page') }}">Institutions</a> to fix or add their recruitment page links.</p>
+</div>
+{% endif %}
+
+{% if src.err %}
+<div class="note warn">⚠ {{ src.err }} of {{ src.n }} institution sites could not be reached on the last check. <a href="{{ url_for('sources_page', show='errors') }}">See which ones</a> — you can paste a working recruitment-page link for them.</div>
+{% endif %}
+
+<div class="cols">
+  <section>
+    <div class="sec-head"><h2>⏰ Closing soon</h2><a href="{{ url_for('vacancies', status='open', sort='deadline') }}">All open →</a></div>
+    {% for v in closing %}{{ card(v, compact=True) }}{% else %}<p class="muted pad">No open vacancies with a known last date right now.</p>{% endfor %}
+  </section>
+  <section>
+    <div class="sec-head"><h2>🆕 Recently found</h2><a href="{{ url_for('vacancies', status='active') }}">See all →</a></div>
+    {% for v in recent %}{{ card(v, compact=True) }}{% else %}<p class="muted pad">Nothing yet.</p>{% endfor %}
+  </section>
+</div>
+
+{% if upcoming %}
+<section>
+  <div class="sec-head"><h2>📅 Opening soon</h2></div>
+  <div class="grid2">{% for v in upcoming %}{{ card(v, compact=True) }}{% endfor %}</div>
+</section>
+{% endif %}
+{% endblock %}

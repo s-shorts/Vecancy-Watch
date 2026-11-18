@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block content %}
+{% set s = settings %}
+<form method="post" class="settings">
+  <section class="panel">
+    <h2>Profession</h2>
+    <p><span class="chip st-open">{{ profession_label }}</span> <span class="muted small">More professions (Associate Professor, Professor, Librarian) are coming later.</span></p>
+  </section>
+
+  <section class="panel">
+    <h2>Subjects</h2>
+    <p class="muted small">Alerts are sent only for notices that mention these subjects (or where the subject couldn't be confirmed).</p>
+    {% include "_subjects.html" %}
+  </section>
+
+  <section class="panel">
+    <h2>States &amp; union territories</h2>
+    <div class="state-tools">
+      <input type="search" id="state-filter" placeholder="Search…">
+      <button type="button" class="btn small ghost" data-select="all">Select all</button>
+      <button type="button" class="btn small ghost" data-select="none">Clear</button>
+      <span class="muted small" id="state-count"></span>
+    </div>
+    <div class="state-grid">
+      {% for st in states + uts %}
+      <label class="state"><input type="checkbox" name="states" value="{{ st }}" {{ 'checked' if st in (s.states or []) }}><span>{{ st }}</span><em>{{ counts.get(st, 0) }}</em></label>
+      {% endfor %}
+    </div>
+    <label class="check"><input type="checkbox" name="include_national" value="1" {{ 'checked' if s.include_national }}> Also watch all‑India recruiters (UPSC, Employment News, IGNOU)</label>
+    <label class="check"><input type="checkbox" name="include_colleges" value="1" {{ 'checked' if s.include_colleges }}> Also watch constituent &amp; government colleges listed on university websites</label>
+  </section>
+
+  <section class="panel">
+    <h2>Checking &amp; reminders</h2>
+    <div class="form-grid">
+      <label>Check all sites every
+        <select name="scan_interval_hours">
+          {% for h in [2, 3, 4, 6, 8, 12, 24] %}<option value="{{ h }}" {{ 'selected' if s.scan_interval_hours|int == h }}>{{ h }} hours</option>{% endfor %}
+        </select>
+      </label>
+      <label>Remind me this many days before the last date
+        <input name="reminder_days" value="{{ (s.reminder_days or [])|join(', ') }}" placeholder="7, 3, 1">
+      </label>
+      <label>Send reminders for
+        <select name="reminder_scope">
+          <option value="all" {{ 'selected' if s.reminder_scope == 'all' }}>All open vacancies (not hidden / applied)</option>
+          <option value="starred" {{ 'selected' if s.reminder_scope == 'starred' }}>Only vacancies I've saved ★</option>
+        </select>
+      </label>
+    </div>
+    <label class="check"><input type="checkbox" name="notify_likely_open" value="1" {{ 'checked' if s.notify_likely_open }}> Also alert me about new notices where no last date could be found</label>
+  </section>
+
+  <section class="panel">
+    <h2>Where to send alerts</h2>
+    <p class="muted small">Alerts always appear on the Alerts page, and as browser pop‑ups while this app is open in a tab.</p>
+    <div class="chan">
+      <label class="check"><input type="checkbox" name="notify_desktop" value="1" {{ 'checked' if s.notify_desktop }}> <b>Desktop pop‑ups</b> on this computer</label>
+      <button type="button" class="btn small ghost" data-test="desktop">Send test</button>
+    </div>
+
+    <div class="chan block">
+      <label class="check"><input type="checkbox" name="telegram_enabled" value="1" {{ 'checked' if s.telegram_enabled }}> <b>Telegram</b> (alerts on your phone)</label>
+      <ol class="help small">
+        <li>In Telegram, open <b>@BotFather</b>, send <code>/newbot</code>, and copy the token.</li>
+        <li>Open your new bot and press <b>Start</b>, then press <b>Find my chat ID</b> here.</li>
+      </ol>
+      <div class="row2">
+        <input name="telegram_token" id="tg-token" value="{{ s.telegram_token }}" placeholder="Bot token">
+        <div class="inline"><input name="telegram_chat_id" id="tg-chat" value="{{ s.telegram_chat_id }}" placeholder="Chat ID"><button type="button" class="btn small ghost" id="tg-detect">Find my chat ID</button></div>
+      </div>
+      <div class="muted small" id="tg-msg"></div>
+      <button type="button" class="btn small ghost" data-test="telegram">Send test</button>
+    </div>
+
+    <div class="chan block">
+      <label class="check"><input type="checkbox" name="email_enabled" value="1" {{ 'checked' if s.email_enabled }}> <b>E‑mail</b></label>
+      <p class="help small">For Gmail use an <b>App password</b> (Google Account → Security → 2‑Step Verification → App passwords).</p>
+      <div class="form-grid">
+        <label>SMTP server <input name="smtp_host" value="{{ s.smtp_host }}"></label>
+        <label>Port <input name="smtp_port" value="{{ s.smtp_port }}"></label>
+        <label>Sender e‑mail <input name="smtp_user" value="{{ s.smtp_user }}"></label>
+        <label>Password {% if s.smtp_password %}<span class="muted small">(saved — leave blank to keep)</span>{% endif %}<input name="smtp_password" type="password" placeholder="App password"></label>
+        <label>Send alerts to <input name="email_to" value="{{ s.email_to }}"></label>
+      </div>
+      <button type="button" class="btn small ghost" data-test="email">Send test</button>
+    </div>
+    <div class="muted small" id="test-msg"></div>
+  </section>
+
+  <div class="save-bar"><button class="btn primary big">Save settings</button></div>
+</form>
+{% endblock %}
+{% block scripts %}<script>VW.initStatePicker(); VW.initChannelTests();</script>{% endblock %}

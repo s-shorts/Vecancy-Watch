@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Get started{% endblock %}
+{% block bare_content %}
+<form method="post" class="wizard" id="wizard">
+  <div class="wiz-head">
+    <span class="logo big">VW</span>
+    <div>
+      <h1>Welcome to VacancyWatch</h1>
+      <p class="muted">Tell us what you're looking for. We'll keep checking government universities, colleges and institutes and alert you when a vacancy opens.</p>
+    </div>
+  </div>
+  <ol class="steps">
+    <li class="on" data-step="1">Profession</li>
+    <li data-step="2">States</li>
+    <li data-step="3">Subjects</li>
+    <li data-step="4">Alerts</li>
+  </ol>
+
+  <section class="wstep" data-step="1">
+    <h2>1. What position are you looking for?</h2>
+    <div class="prof-grid">
+      {% for key, p in professions.items() %}
+      <label class="prof {{ '' if p.available else 'disabled' }}">
+        <input type="radio" name="profession" value="{{ key }}" {{ 'checked' if key == 'assistant_professor' }} {{ '' if p.available else 'disabled' }}>
+        <span class="prof-body">
+          <strong>{{ p.label }}</strong>
+          <small>{{ p.description }}</small>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="wnav"><span></span><button type="button" class="btn primary" data-go="2">Next →</button></div>
+  </section>
+
+  <section class="wstep hidden" data-step="2">
+    <h2>2. Which states and union territories should we watch?</h2>
+    <p class="muted">We check each one's public service commission, college service commission, state and central universities, IITs, NITs, IIITs, IISERs, AIIMS and IIMs. You can add more institutions later.</p>
+    {% set chosen = s.states or [] %}
+    <div class="state-tools">
+      <input type="search" id="state-filter" placeholder="Search states…">
+      <button type="button" class="btn small ghost" data-select="all">Select all</button>
+      <button type="button" class="btn small ghost" data-select="none">Clear</button>
+      <span class="muted small" id="state-count"></span>
+    </div>
+    <h3 class="grp">States</h3>
+    <div class="state-grid">
+      {% for st in states %}
+      <label class="state"><input type="checkbox" name="states" value="{{ st }}" {{ 'checked' if st in chosen }}><span>{{ st }}</span><em>{{ counts.get(st, 0) }}</em></label>
+      {% endfor %}
+    </div>
+    <h3 class="grp">Union territories</h3>
+    <div class="state-grid">
+      {% for st in uts %}
+      <label class="state"><input type="checkbox" name="states" value="{{ st }}" {{ 'checked' if st in chosen }}><span>{{ st }}</span><em>{{ counts.get(st, 0) }}</em></label>
+      {% endfor %}
+    </div>
+    <label class="check"><input type="checkbox" name="include_national" value="1" {{ 'checked' if s.include_national }}> Also watch all‑India recruiters (UPSC, Employment News, IGNOU)</label>
+    <label class="check"><input type="checkbox" name="include_colleges" value="1" {{ 'checked' if s.include_colleges }}> <span>Also watch <b>constituent &amp; government colleges</b> listed on each university's website (e.g. C.M.P. Degree College for Allahabad University)</span></label>
+    <div class="wnav"><button type="button" class="btn ghost" data-go="1">← Back</button><button type="button" class="btn primary" data-go="3">Next →</button></div>
+  </section>
+
+  <section class="wstep hidden" data-step="3">
+    <h2>3. Which subjects are you interested in?</h2>
+    <p class="muted">We read each recruitment notification and alert you only when your subject is in it. Notices we can't read (e.g. scanned images) are shown as <i>"subject not confirmed"</i> so you don't miss them.</p>
+    {% include "_subjects.html" %}
+    <div class="wnav"><button type="button" class="btn ghost" data-go="2">← Back</button><button type="button" class="btn primary" data-go="4">Next →</button></div>
+  </section>
+
+  <section class="wstep hidden" data-step="4">
+    <h2>4. How should we alert you?</h2>
+    <p class="muted">Alerts always appear inside the app, and in your browser while it's open. You can also get them on your phone. You can skip this and set it up later in Settings.</p>
+    <label class="check"><input type="checkbox" name="notify_desktop" value="1" checked> Desktop pop‑up notifications on this computer</label>
+    <details class="channel">
+      <summary><b>Telegram</b> — get alerts on your phone (recommended)</summary>
+      <ol class="help">
+        <li>In Telegram, open <b>@BotFather</b>, send <code>/newbot</code> and follow the steps. Copy the token it gives you.</li>
+        <li>Open your new bot and press <b>Start</b>.</li>
+        <li>Paste the token below and press <b>Find my chat ID</b>.</li>
+      </ol>
+      <div class="row2">
+        <input name="telegram_token" id="tg-token" placeholder="Bot token, e.g. 123456:ABC-DEF…">
+        <div class="inline"><input name="telegram_chat_id" id="tg-chat" placeholder="Chat ID"><button type="button" class="btn small ghost" id="tg-detect">Find my chat ID</button></div>
+      </div>
+      <div class="muted small" id="tg-msg"></div>
+    </details>
+    <details class="channel">
+      <summary><b>E‑mail</b></summary>
+      <p class="help">For Gmail, turn on 2‑step verification and create an <b>App password</b> (Google Account → Security → App passwords). Use that, not your normal password.</p>
+      <div class="row3">
+        <input name="smtp_user" placeholder="Your Gmail address (sender)">
+        <input name="smtp_password" type="password" placeholder="App password">
+        <input name="email_to" placeholder="Send alerts to (e‑mail)">
+      </div>
+    </details>
+    <div class="wnav"><button type="button" class="btn ghost" data-go="3">← Back</button><button type="submit" class="btn primary big">Start watching</button></div>
+  </section>
+</form>
+{% endblock %}
+{% block scripts %}<script>VW.initWizard(); VW.initStatePicker();</script>{% endblock %}

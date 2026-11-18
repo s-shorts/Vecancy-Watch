@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VacancyWatch</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233346c4'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>VW</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .sidebar nav a { cursor: pointer; }
+    .steps-box { background: var(--pri-soft); border-radius: 10px; padding: 12px 16px; margin: 12px 0; }
+    .steps-box ol { margin: 6px 0; padding-left: 20px; }
+    pre.cfg { background: #161b33; color: #e3e7ff; padding: 12px; border-radius: 10px; overflow: auto; font-size: .82rem; max-height: 220px; }
+    .secret-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+    .secret-table code { font-weight: 700; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" data-go="dashboard">
+      <span class="logo">VW</span>
+      <span><strong>VacancyWatch</strong><small>Assistant Professor</small></span>
+    </a>
+    <nav>
+      <a data-go="dashboard"><span class="ic">▦</span>Dashboard</a>
+      <a data-go="vacancies"><span class="ic">☰</span>Vacancies &amp; history</a>
+      <a data-go="alerts"><span class="ic">🔔</span>Alerts</a>
+      <a data-go="sources"><span class="ic">🏛</span>Institutions</a>
+      <a data-go="setup"><span class="ic">⚙</span>Setup</a>
+    </nav>
+    <div class="side-foot">
+      <div class="muted small">Watching</div>
+      <div class="small" id="side-states">—</div>
+      <div class="muted small" style="margin-top:6px">Checked automatically every 6 h</div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div><h1 id="heading">Dashboard</h1><p class="muted" id="sub"></p></div>
+      <div class="scanbox">
+        <div class="scan-info"><span class="muted small" id="last-scan">Loading…</span></div>
+        <a class="btn primary" id="check-now" target="_blank" rel="noopener" title="Opens GitHub: press 'Run workflow'">↻ Check now</a>
+      </div>
+    </header>
+    <div id="view"></div>
+  </main>
+</div>
+
+<script>
+(function () {
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const store = {
+    get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  };
+  const LABELS = { open: 'Open', upcoming: 'Opening soon', likely_open: 'Possibly open', closed: 'Closed', unknown: 'Date unclear' };
+  const ICONS = { new: '🆕', opened: '✅', extended: '📅', reminder: '⏰' };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const pd = s => s ? new Date(s.slice(0, 10) + 'T00:00:00') : null;
+  const fdate = s => { const d = pd(s); return d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; };
+  const ago = s => {
+    if (!s) return 'never';
+    const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + '+05:30';   // times are saved in Indian time
+    const sec = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (sec < 90) return 'just now'; if (sec < 3600) return Math.floor(sec / 60) + ' min ago';
+    if (sec < 86400) return Math.floor(sec / 3600) + ' h ago'; return Math.floor(sec / 86400) + ' days ago';
+  };
+  let META = {}, VAC = [], SRC = [], NOTE = [];
+  let marks = store.get('vw_marks', {});   // {id: {starred, applied, hidden}}
+  const mark = (v, f) => !!(marks[v.id] && marks[v.id][f]);
+
+  function decorate(v) {
+    try { v.d = JSON.parse(v.details || '{}') || {}; } catch (e) { v.d = {}; }
+    try { v.alts = JSON.parse(v.alt_links || '[]') || []; } catch (e) { v.alts = []; }
+    v.subject_list = (v.subjects || '').split(', ').filter(Boolean);
+    v.other_list = (v.other_subjects || '').split(', ').filter(Boolean);
+    const dl = pd(v.deadline);
+    v.days_left = dl ? Math.round((dl - today) / 864e5) : null;
+    const fs = pd(v.first_seen); v.is_new = !v.baseline && fs && (today - fs) / 864e5 <= 3;
+    // statuses can change between checks: recompute from dates
+    const op = pd(v.opening_date);
+    if (v.kind !== 'update') {
+      if (op && op > today) v.status = 'upcoming';
+      else if (dl) v.status = dl >= today ? 'open' : 'closed';
+    }
+    return v;
+  }
+
+  function countdown(v) {
+    if (v.status === 'upcoming') return `<span class="cd up">Opens ${fdate(v.opening_date)}</span>`;
+    if (v.days_left == null) return '<span class="cd unk">No last date found</span>';
+    if (v.days_left < 0) return `<span class="cd gone">Closed ${-v.days_left} day${v.days_left === -1 ? '' : 's'} ago</span>`;
+    if (v.days_left === 0) return '<span class="cd hot">Closes today</span>';
+    const cls = v.days_left <= 3 ? 'hot' : v.days_left <= 7 ? 'warm' : 'ok';
+    return `<span class="cd ${cls}">${v.days_left} day${v.days_left === 1 ? '' : 's'} left</span>`;
+  }
+
+  function card(v, compact) {
+    const st = v.kind === 'update' ? 'Update' : LABELS[v.status] || v.status;
+    return `<article class="vcard ${mark(v, 'hidden') ? 'is-hidden' : ''}" data-id="${v.id}">
+      <div class="vtop"><div class="chips">
+        <span class="chip st-${esc(v.status)}">${st}</span>
+        ${v.is_new ? '<span class="chip new">NEW</span>' : ''}
+        ${v.kind === 'corrigendum' ? '<span class="chip corr">Corrigendum</span>' : ''}
+        ${v.nature === 'Contract/Guest' ? '<span class="chip contract">Contract / Guest</span>' : ''}
+        ${v.kind === 'update' ? '' : v.subject_match === 'yes' ? `<span class="chip subj-yes">✔ ${esc(v.subjects)}</span>`
+          : v.subject_match === 'no' ? '<span class="chip subj-no">Other subjects</span>'
+          : v.subject_match === 'any' ? '' : '<span class="chip subj-maybe">Subject not confirmed</span>'}
+        <span class="chip state">${esc(v.state)}</span></div>
+        ${v.kind !== 'update' ? countdown(v) : ''}</div>
+      <div class="inst">${esc(v.institution)}</div>
+      <a class="vtitle" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.title)}</a>
+      ${(v.d.posts || v.d.advt_no || v.d.pay) ? `<div class="facts">${v.d.posts ? `<span><b>${v.d.posts}</b> posts</span>` : ''}
+        ${v.d.advt_no ? `<span>Advt <b>${esc(v.d.advt_no)}</b></span>` : ''}${v.d.pay ? `<span>${esc(v.d.pay)}</span>` : ''}</div>` : ''}
+      ${v.alts.length ? `<details class="alts"><summary>Also listed in ${v.alts.length} other place${v.alts.length === 1 ? '' : 's'} (merged)</summary>
+        <ul>${v.alts.map(a => `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc((a.title || '').slice(0, 140))}</a></li>`).join('')}</ul></details>` : ''}
+      ${compact ? '' : `<div class="dates"><span><b>Opens</b> ${fdate(v.opening_date)}</span><span><b>Last date</b> ${fdate(v.deadline)}</span>
+        <span><b>Published</b> ${fdate(v.posted_date)}</span><span><b>First seen</b> ${fdate(v.first_seen)}</span></div>`}
+      ${compact || v.kind === 'update' ? '' : noticeBox(v)}
+      <div class="vactions">
+        <a class="btn small primary" href="${esc(v.url)}" target="_blank" rel="noopener">Open notice ↗</a>
+        ${v.page_url && v.page_url !== v.url ? `<a class="btn small ghost" href="${esc(v.page_url)}" target="_blank" rel="noopener">Source page</a>` : ''}
+        <span class="spacer"></span>
+        <button class="tog ${mark(v, 'starred') ? 'on' : ''}" data-field="starred">★ <span>${mark(v, 'starred') ? 'Saved' : 'Save'}</span></button>
+        <button class="tog ${mark(v, 'applied') ? 'on' : ''}" data-field="applied">✓ <span>${mark(v, 'applied') ? 'Applied' : 'Applied?'}</span></button>
+        <button class="tog ${mark(v, 'hidden') ? 'on' : ''}" data-field="hidden">✕ <span>${mark(v, 'hidden') ? 'Hidden' : 'Hide'}</span></button>
+      </div></article>`;
+  }
+
+  function noticeBox(v) {
+    const d = v.d, how = { pdf: '(read automatically)', page: '(read automatically)', scanned: '(scanned image — open the notice to read it)', failed: "(couldn't open the notice)" }[v.notice_read] || '(not read yet)';
+    const row = (k, val) => val ? `<div class="nk">${k}</div><div>${val}</div>` : '';
+    return `<details class="notice-box" ${v.subject_match === 'yes' && d.snippets && d.snippets.length ? 'open' : ''}>
+      <summary>📄 From the notification <span class="muted small">${how}</span></summary>
+      <div class="notice-grid">
+        ${row('Subjects in notice', v.subject_list.map(x => `<span class="chip subj-yes">${esc(x)}</span>`).join(' ') + ' ' + v.other_list.map(x => `<span class="chip state">${esc(x)}</span>`).join(' '))}
+        ${row('Total posts', d.posts)}${row('Advertisement no.', esc(d.advt_no || ''))}${row('Pay', esc(d.pay || ''))}
+        ${row('Qualification', esc(d.qualification || ''))}
+        ${row('How to apply', d.mode ? esc(d.mode) + (d.apply_url ? ` — <a href="${esc(d.apply_url)}" target="_blank" rel="noopener">${esc(d.apply_url)}</a>` : '') : '')}
+        ${row('Hard copy by', d.hardcopy_by ? `<b>${fdate(d.hardcopy_by)}</b>` : '')}${row('Fee', esc(d.fee || ''))}
+      </div>
+      ${d.snippets && d.snippets.length ? `<div class="nk" style="margin-top:8px">What it says about your subject</div>${d.snippets.map(x => `<blockquote class="snip">${esc(x)}</blockquote>`).join('')}` : ''}
+    </details>`;
+  }
+
+  const ads = () => VAC.filter(v => v.kind !== 'update' && !mark(v, 'hidden') && v.subject_match !== 'no');
+  const ghUrl = p => META.repo ? `https://github.com/${META.repo}${p}` : '#';
+
+  /* ---------------- views ---------------- */
+  const views = {
+    dashboard() {
+      const a = ads(), wk = 7;
+      const open = a.filter(v => v.status === 'open');
+      const s = {
+        open: open.length, closing: open.filter(v => v.days_left != null && v.days_left <= wk).length,
+        upcoming: a.filter(v => v.status === 'upcoming').length, likely: a.filter(v => v.status === 'likely_open').length,
+        new7: a.filter(v => !v.baseline && v.status !== 'closed' && (today - pd(v.first_seen)) / 864e5 <= 7).length,
+      };
+      const closing = open.filter(v => v.deadline).sort((x, y) => x.deadline.localeCompare(y.deadline)).slice(0, 8);
+      const recent = a.filter(v => ['open', 'upcoming', 'likely_open'].includes(v.status))
+        .sort((x, y) => (x.baseline - y.baseline) || y.first_seen.localeCompare(x.first_seen) || y.id - x.id).slice(0, 10);
+      const errs = SRC.filter(r => r.enabled && r.last_status === 'error').length, n = SRC.filter(r => r.enabled).length;
+      let html = `<section class="stats">
+        <a class="stat s-open" data-filter="open"><b>${s.open}</b><span>Open now</span></a>
+        <a class="stat s-hot" data-filter="open"><b>${s.closing}</b><span>Closing within 7 days</span></a>
+        <a class="stat s-up" data-filter="upcoming"><b>${s.upcoming}</b><span>Opening soon</span></a>
+        <a class="stat s-likely" data-filter="likely_open"><b>${s.likely}</b><span>Possibly open (no date found)</span></a>
+        <a class="stat s-new" data-filter="active"><b>${s.new7}</b><span>New this week</span></a></section>`;
+      if (!(META.config && (META.config.states || []).length)) {
+        html += `<div class="empty"><h3>👋 Welcome! Let's set things up</h3><p class="muted">Choose the states you want to watch. It takes one minute.</p>
+          <a class="btn primary big" data-go="setup">Start setup →</a></div>`;
+      } else if (!VAC.length) {
+        html += `<div class="empty"><h3>No vacancies found yet</h3><p class="muted">The first check runs on GitHub and takes about 15–30 minutes. This page updates automatically when it finishes.</p></div>`;
+      }
+      if (errs) html += `<div class="note warn">⚠ ${errs} of ${n} institution sites could not be reached on the last check. <a data-go="sources" data-show="errors" href="#">See which ones</a></div>`;
+      html += `<div class="cols"><section><div class="sec-head"><h2>⏰ Closing soon</h2></div>
+        ${closing.map(v => card(v, true)).join('') || '<p class="muted pad">No open vacancies with a known last date right now.</p>'}</section>
+        <section><div class="sec-head"><h2>🆕 Recently found</h2></div>
+        ${recent.map(v => card(v, true)).join('') || '<p class="muted pad">Nothing yet.</p>'}</section></div>`;
+      return html;
+    },
+
+    vacancies(f = {}) {
+      const st = [...new Set(VAC.map(v => v.state))].sort();
+      const opt = (val, lbl, cur) => `<option value="${val}" ${cur === val ? 'selected' : ''}>${lbl}</option>`;
+      return `<form class="filters" id="filters">
+        <input type="search" name="q" value="${esc(f.q || '')}" placeholder="Search title or institution (e.g. Physics, IIT, Commerce)…" class="grow">
+        <select name="status">${[['', 'Any status'], ['active', 'Open, upcoming & possibly open'], ['open', 'Open'], ['upcoming', 'Opening soon'], ['likely_open', 'Possibly open'], ['closed', 'Closed'], ['unknown', 'Date unclear']].map(([a, b]) => opt(a, b, f.status || '')).join('')}</select>
+        <select name="subject">${[['mine', 'My subjects (incl. not confirmed)'], ['yes', 'My subjects — confirmed only'], ['no', 'Other subjects'], ['all', 'All subjects']].map(([a, b]) => opt(a, b, f.subject || 'mine')).join('')}</select>
+        <select name="state"><option value="">All states</option>${st.map(s => opt(s, s, f.state)).join('')}</select>
+        <select name="nature">${[['', 'Regular & contract'], ['Regular', 'Regular only'], ['Contract/Guest', 'Contract / guest only']].map(([a, b]) => opt(a, b, f.nature || '')).join('')}</select>
+        <select name="kind">${[['ads', 'Advertisements'], ['update', 'Results / shortlists / interviews'], ['all', 'Everything']].map(([a, b]) => opt(a, b, f.kind || 'ads')).join('')}</select>
+        <select name="sort">${[['found', 'Newest found'], ['deadline', 'Last date (soonest)'], ['institution', 'Institution A–Z']].map(([a, b]) => opt(a, b, f.sort || 'found')).join('')}</select>
+        <label class="check sm"><input type="checkbox" name="starred" ${f.starred ? 'checked' : ''}> Saved</label>
+        <label class="check sm"><input type="checkbox" name="applied" ${f.applied ? 'checked' : ''}> Applied</label>
+        <label class="check sm"><input type="checkbox" name="show_hidden" ${f.show_hidden ? 'checked' : ''}> Show hidden</label>
+      </form><div class="list-head"><span class="muted" id="count"></span><button class="btn small ghost" id="csv">⬇ Download as spreadsheet (CSV)</button></div>
+      <div class="vlist" id="vlist"></div>`;
+    },
+
+    alerts() {
+      return `<div class="nlist">${NOTE.map(n => `<div class="notif k-${esc(n.kind)}"><div class="nicon">${ICONS[n.kind] || '🔔'}</div>
+        <div class="nbody"><div class="ntitle">${esc(n.title)}</div>${(n.body || '').split('\n').map((l, i) => `<div class="${i ? 'muted small' : ''}">${esc(l)}</div>`).join('')}
+        <div class="nmeta"><span class="muted small">${ago(n.created)}</span>${n.url ? ` · <a href="${esc(n.url)}" target="_blank" rel="noopener">Open notice ↗</a>` : ''}</div></div></div>`).join('')
+        || '<div class="empty"><h3>No alerts yet</h3><p class="muted">New vacancies in your states show up here, and on Telegram / e‑mail if you set them up on the Setup page.</p></div>'}</div>`;
+    },
+
+    sources(show = 'watching') {
+      let rows = SRC.filter(r => show === 'all' || (show === 'errors' ? r.enabled && r.last_status === 'error' : r.enabled || r.custom));
+      const g = {}; rows.forEach(r => (g[r.state] = g[r.state] || []).push(r));
+      return `<div class="steps-box">Missing a college? Or a site shows a red dot? Add its <b>recruitment page link</b> in the Setup page → “Extra institutions”.</div>
+        <div class="tabs">${[['watching', 'Watching'], ['errors', 'Problems'], ['all', 'All in the list']].map(([k, l]) => `<a class="${show === k ? 'on' : ''}" data-show="${k}" href="#">${l}</a>`).join('')}<span class="muted small">${rows.length} shown</span></div>
+        ${Object.keys(g).sort().map(s => `<section class="srcgroup"><h2>${esc(s)} <span class="muted small">${g[s].length}</span></h2>
+        <table class="srctable"><thead><tr><th></th><th>Institution</th><th>Type</th><th>Last checked</th><th>Vacancies</th></tr></thead><tbody>
+        ${g[s].map(r => `<tr class="${r.enabled ? '' : 'off'}"><td><span class="dot ${esc(r.last_status || 'never')}" title="${esc(r.last_error || '')}"></span></td>
+          <td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>${r.custom ? ' <span class="chip state">Added by you</span>' : ''}${r.discovered ? ' <span class="chip state">Found on university site</span>' : ''}
+          ${r.last_status === 'error' ? `<div class="err small">${esc(r.last_error)}</div>` : ''}</td>
+          <td class="muted small">${esc(r.type)}</td><td class="muted small">${ago(r.last_checked)}</td><td>${r.found_count || 0}</td></tr>`).join('')}
+        </tbody></table></section>`).join('') || '<div class="empty"><h3>Nothing here yet</h3><p class="muted">Institutions appear after the first check.</p></div>'}`;
+    },
+
+    setup() {
+      const cfg = META.config || {}, chosen = new Set(cfg.states || []), cnt = META.counts || {};
+      const box = st => `<label class="state"><input type="checkbox" name="states" value="${esc(st)}" ${chosen.has(st) ? 'checked' : ''}><span>${esc(st)}</span><em>${cnt[st] || 0}</em></label>`;
+      const extras = (cfg.extra_sources || []).map(e => `${e.state || ''} | ${e.name || ''} | ${e.url}`).join('\n');
+      return `<section class="panel"><h2>Profession</h2>
+        <div class="prof-grid">${Object.entries(META.professions || {}).map(([k, p]) => `<label class="prof ${p.available ? '' : 'disabled'}">
+          <input type="radio" name="profession" value="${k}" ${k === (cfg.profession || 'assistant_professor') ? 'checked' : ''} ${p.available ? '' : 'disabled'}>
+          <span class="prof-body"><strong>${esc(p.label)}</strong><small>${p.available ? 'Teaching posts at government institutions' : 'Coming soon'}</small></span></label>`).join('')}</div></section>
+      <section class="panel"><h2>Subjects</h2>
+        <p class="muted small">We read each notification and alert you only when your subject is in it (unreadable notices are shown as "subject not confirmed"). Untick all to get every subject.</p>
+        <div class="prof-grid subj-grid">${Object.entries(META.subjects || {}).map(([k, l]) => `<label class="prof subj"><input type="checkbox" name="subjects" value="${k}" ${(cfg.subjects || Object.keys(META.subjects || {})).includes(k) ? 'checked' : ''}><span class="prof-body"><strong>${esc(l)}</strong></span></label>`).join('')}</div>
+        <label class="field">Other subjects (optional, separate with commas)<input id="custom-subj" value="${esc((cfg.custom_subjects || []).join(', '))}" placeholder="e.g. Cyber Security, Statistics"></label>
+      </section>
+      <section class="panel"><h2>States &amp; union territories to watch</h2>
+        <div class="state-tools"><input type="search" id="state-filter" placeholder="Search…">
+          <button type="button" class="btn small ghost" data-select="all">Select all</button>
+          <button type="button" class="btn small ghost" data-select="none">Clear</button><span class="muted small" id="state-count"></span></div>
+        <h3 class="grp">States</h3><div class="state-grid">${(META.states || []).map(box).join('')}</div>
+        <h3 class="grp">Union territories</h3><div class="state-grid">${(META.uts || []).map(box).join('')}</div>
+        <label class="check"><input type="checkbox" id="national" ${cfg.include_national !== false ? 'checked' : ''}> Also watch all‑India recruiters (UPSC, Employment News, IGNOU)</label>
+        <label class="check"><input type="checkbox" id="colleges" ${cfg.include_colleges !== false ? 'checked' : ''}> <span>Also watch <b>constituent &amp; government colleges</b> listed on university websites</span></label>
+        <div class="form-grid"><label>Remind me this many days before the last date <input id="rdays" value="${(cfg.reminder_days || [7, 3, 1]).join(', ')}"></label></div>
+        <label class="check"><input type="checkbox" id="likely" ${cfg.notify_likely_open !== false ? 'checked' : ''}> Also alert me about notices where no last date could be found</label>
+        <h3 class="grp">Extra institutions (optional)</h3>
+        <p class="muted small">One per line: <code>State | Name | link to recruitment page</code></p>
+        <textarea id="extras" rows="3" style="width:100%;font:inherit;border:1px solid #d5d9e5;border-radius:8px;padding:8px" placeholder="Uttar Pradesh | Govt Degree College Lucknow | https://example.ac.in/recruitment">${esc(extras)}</textarea>
+      </section>
+      <section class="panel"><h2>Save your choices</h2>
+        <div class="steps-box"><ol>
+          <li>Press <b>Copy settings &amp; open GitHub</b> below.</li>
+          <li>On the GitHub page, select all the text in the box (<b>Ctrl+A</b>) and paste (<b>Ctrl+V</b>).</li>
+          <li>Press the green <b>Commit changes…</b> button, then <b>Commit changes</b> again.</li>
+        </ol>The check starts by itself. Come back here in about 20 minutes to see your vacancies.</div>
+        <button class="btn primary big" id="save-cfg">📋 Copy settings &amp; open GitHub</button> <span class="muted small" id="save-msg"></span>
+        <details style="margin-top:10px"><summary class="muted small">Show settings text</summary><pre class="cfg" id="cfg-text"></pre></details></section>
+      <section class="panel"><h2>Get alerts on your phone (Telegram / e‑mail)</h2>
+        <p>Status: Telegram ${META.telegram ? '✅ connected' : '❌ not set up'} · E‑mail ${META.email ? '✅ connected' : '❌ not set up'}</p>
+        <div class="steps-box"><b>Telegram (recommended):</b><ol>
+          <li>In Telegram, open <b>@BotFather</b>, send <code>/newbot</code>, follow the steps and copy the <b>token</b>.</li>
+          <li>Open your new bot and press <b>Start</b>. Then open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser and copy the number after <code>"chat":{"id":</code>.</li>
+          <li>Open <a href="${ghUrl('/settings/secrets/actions/new')}" target="_blank" rel="noopener">GitHub → New secret</a> and add two secrets (name → value):</li></ol>
+          <table class="secret-table"><tr><td><code>TELEGRAM_TOKEN</code></td><td>the bot token</td></tr><tr><td><code>TELEGRAM_CHAT_ID</code></td><td>your chat id number</td></tr></table></div>
+        <div class="steps-box"><b>E‑mail (Gmail):</b> create an <b>App password</b> (Google Account → Security → 2‑Step Verification → App passwords), then add secrets
+          <table class="secret-table"><tr><td><code>SMTP_USER</code></td><td>your Gmail address</td></tr><tr><td><code>SMTP_PASSWORD</code></td><td>the app password</td></tr><tr><td><code>EMAIL_TO</code></td><td>where to send alerts</td></tr></table></div>
+        <p class="muted small">Secrets are hidden — nobody can see them, even though the project is public.</p></section>`;
+    },
+  };
+
+  /* ---------------- vacancy list filtering ---------------- */
+  let filt = {};
+  function filtered() {
+    let r = VAC.slice();
+    const f = filt;
+    if (f.status === 'active') r = r.filter(v => ['open', 'upcoming', 'likely_open'].includes(v.status));
+    else if (f.status) r = r.filter(v => v.status === f.status);
+    if ((f.kind || 'ads') === 'ads') r = r.filter(v => v.kind !== 'update'); else if (f.kind === 'update') r = r.filter(v => v.kind === 'update');
+    const sj = f.subject || 'mine';
+    if (sj === 'mine') r = r.filter(v => v.subject_match !== 'no');
+    else if (sj === 'yes') r = r.filter(v => v.subject_match === 'yes' || v.subject_match === 'any');
+    else if (sj === 'no') r = r.filter(v => v.subject_match === 'no');
+    if (f.state) r = r.filter(v => v.state === f.state);
+    if (f.nature) r = r.filter(v => v.nature === f.nature);
+    if (f.starred) r = r.filter(v => mark(v, 'starred'));
+    if (f.applied) r = r.filter(v => mark(v, 'applied'));
+    if (!f.show_hidden) r = r.filter(v => !mark(v, 'hidden'));
+    if (f.q) { const q = f.q.toLowerCase(); r = r.filter(v => (v.title + ' ' + v.institution).toLowerCase().includes(q)); }
+    const s = f.sort || 'found';
+    if (s === 'deadline') r.sort((a, b) => (!a.deadline) - (!b.deadline) || (a.deadline || '').localeCompare(b.deadline || ''));
+    else if (s === 'institution') r.sort((a, b) => a.institution.localeCompare(b.institution));
+    else r.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || b.id - a.id);
+    return r;
+  }
+  function renderList() {
+    const r = filtered();
+    $('#count').textContent = `${r.length} result${r.length === 1 ? '' : 's'}`;
+    $('#vlist').innerHTML = r.slice(0, 300).map(v => card(v)).join('') ||
+      '<div class="empty"><h3>No vacancies match these filters</h3><p class="muted">Try "Any status" to include closed ones from your history.</p></div>';
+  }
+
+  /* ---------------- navigation ---------------- */
+  const TITLES = { dashboard: 'Dashboard', vacancies: 'Vacancies & history', alerts: 'Alerts', sources: 'Institutions we watch', setup: 'Setup' };
+  const SUBS = {
+    vacancies: "Everything we've ever found is kept here, so you can come back to anything you missed.",
+    alerts: 'New vacancies, applications opening, deadline extensions and closing‑soon reminders.',
+    sources: 'Government universities, commissions and institutes checked on every run.',
+    setup: 'Choose what to watch and how to get alerts. Changes are saved to your GitHub project.',
+  };
+  function go(view, arg) {
+    document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.toggle('active', a.dataset.go === view));
+    $('#heading').textContent = TITLES[view];
+    const states = (META.config && META.config.states) || [];
+    const subjLabels = ((META.config && META.config.subjects) || []).map(k => (META.subjects || {})[k]).filter(Boolean)
+      .concat((META.config && META.config.custom_subjects) || []);
+    $('#sub').textContent = view === 'dashboard' ? (states.length ? `Assistant Professor vacancies${subjLabels.length ? ' in ' + subjLabels.join(', ') : ''} · ${states.join(', ')}` : '') : SUBS[view] || '';
+    if (view === 'vacancies') { filt = arg || filt; $('#view').innerHTML = views.vacancies(filt); renderList(); bindFilters(); }
+    else { $('#view').innerHTML = views[view](arg); }
+    if (view === 'setup') bindSetup();
+    if (location.hash.slice(1) !== view) history.replaceState(null, '', '#' + view);
+    window.scrollTo(0, 0);
+  }
+  function bindFilters() {
+    const form = $('#filters');
+    const read = () => { const fd = new FormData(form), o = {}; for (const [k, v] of fd) o[k] = v; filt = o; renderList(); };
+    form.addEventListener('input', read); form.addEventListener('change', read);
+    form.addEventListener('submit', e => e.preventDefault());
+    $('#csv').onclick = () => {
+      const cols = ['institution', 'state', 'title', 'subjects', 'subject_match', 'status', 'nature', 'kind', 'opening_date', 'deadline', 'posted_date', 'first_seen', 'url'];
+      const csv = [cols.join(',')].concat(filtered().map(v => cols.map(c => '"' + String(v[c] ?? '').replace(/"/g, '""') + '"').join(','))).join('\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'vacancies.csv'; a.click();
+    };
+  }
+  function bindSetup() {
+    const boxes = [...document.querySelectorAll('input[name=states]')];
+    const upd = () => { $('#state-count').textContent = boxes.filter(b => b.checked).length + ' selected'; $('#cfg-text').textContent = cfgText(); };
+    document.getElementById('view').addEventListener('input', upd); document.getElementById('view').addEventListener('change', upd); upd();
+    $('#state-filter').addEventListener('input', e => { const q = e.target.value.toLowerCase(); document.querySelectorAll('.state').forEach(l => l.classList.toggle('hidden', !l.textContent.toLowerCase().includes(q))); });
+    document.querySelectorAll('[data-select]').forEach(b => b.onclick = () => { boxes.forEach(x => { if (!x.closest('.state').classList.contains('hidden')) x.checked = b.dataset.select === 'all'; }); upd(); });
+    $('#save-cfg').onclick = async () => {
+      if (!boxes.some(b => b.checked)) { $('#save-msg').textContent = 'Please choose at least one state.'; return; }
+      const text = cfgText();
+      try { await navigator.clipboard.writeText(text); $('#save-msg').textContent = '✓ Copied! Now paste it on GitHub.'; }
+      catch (e) { $('#save-msg').textContent = 'Copy the text under "Show settings text" manually.'; document.querySelector('details').open = true; }
+      window.open(ghUrl(`/edit/${META.branch || 'main'}/config.json`), '_blank');
+    };
+  }
+  function cfgText() {
+    const states = [...document.querySelectorAll('input[name=states]:checked')].map(b => b.value);
+    const days = $('#rdays').value.split(',').map(x => parseInt(x, 10)).filter(x => x > 0);
+    const extra = $('#extras').value.split('\n').map(l => l.split('|').map(s => s.trim())).filter(p => p.length === 3 && p[2])
+      .map(([state, name, url]) => ({ state, name, url }));
+    return JSON.stringify({
+      profession: (document.querySelector('input[name=profession]:checked') || {}).value || 'assistant_professor',
+      states, include_national: $('#national').checked, include_colleges: $('#colleges').checked,
+      subjects: [...document.querySelectorAll('input[name=subjects]:checked')].map(b => b.value),
+      custom_subjects: $('#custom-subj').value.split(',').map(x => x.trim()).filter(Boolean),
+      reminder_days: days.length ? days : [7, 3, 1],
+      notify_likely_open: $('#likely').checked, extra_sources: extra,
+    }, null, 2) + '\n';
+  }
+
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-go],[data-filter],[data-show],.tog');
+    if (!t) return;
+    if (t.classList.contains('tog')) {
+      const id = t.closest('.vcard').dataset.id, f = t.dataset.field;
+      marks[id] = marks[id] || {}; marks[id][f] = !marks[id][f]; store.set('vw_marks', marks);
+      const on = marks[id][f], L = { starred: ['Save', 'Saved'], applied: ['Applied?', 'Applied'], hidden: ['Hide', 'Hidden'] };
+      t.classList.toggle('on', on); t.querySelector('span').textContent = L[f][on ? 1 : 0];
+      if (f === 'hidden') t.closest('.vcard').classList.toggle('is-hidden', on);
+      return;
+    }
+    e.preventDefault();
+    if (t.dataset.filter) go('vacancies', { status: t.dataset.filter, sort: 'deadline' });
+    else if (t.dataset.show && !t.dataset.go) go('sources', t.dataset.show);
+    else go(t.dataset.go, t.dataset.show);
+  });
+
+  window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TITLES[h] && META.states) go(h); });
+  const get = f => fetch('data/' + f + '?t=' + Date.now()).then(r => r.ok ? r.json() : []).catch(() => []);
+  Promise.all([get('meta.json'), get('vacancies.json'), get('sources.json'), get('notifications.json')]).then(([m, v, s, n]) => {
+    META = m || {}; VAC = (v || []).map(decorate); SRC = s || []; NOTE = n || [];
+    $('#last-scan').textContent = 'Last checked ' + ago(META.last_scan);
+    $('#check-now').href = ghUrl('/actions/workflows/check-vacancies.yml');
+    const st = (META.config && META.config.states) || [];
+    $('#side-states').textContent = st.length ? `${st.length} state${st.length === 1 ? '' : 's'}${META.config.include_national ? ' + All‑India' : ''}` : 'Not set up yet';
+    const start = location.hash.slice(1);
+    go(TITLES[start] ? start : (st.length ? 'dashboard' : 'setup'));
+  });
+})();
+</script>
+</body>
+</html>
